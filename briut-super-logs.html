@@ -1,0 +1,3077 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Universal Log Explorer - Enhanced</title>
+    <style>
+        :root {
+            --bg-color: #f8f9fa;
+            --header-bg: #2c3e50;
+            --text-main: #333;
+            --text-secondary: #ffffff;
+            --border-color: #dee2e6;
+            --error-color: #e74c3c;
+            --warning-color: #f39c12;
+            --success-color: #27ae60;
+            --row-height: 40px;
+            --json-key: #881391;
+            --json-string: #c41a16;
+            --json-number: #1c11ee;
+            --json-bool: #0d904f;
+            --selected-row-bg: #e3f2fd;
+            --selected-row-border: #2196f3;
+        }
+
+        [data-theme="dark"] {
+            --bg-color: #1a1a1a;
+            --header-bg: #0d1117;
+            --text-main: #e6edf3;
+            --border-color: #30363d;
+            --selected-row-bg: #1f2937;
+            --selected-row-border: #3b82f6;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            color: var(--text-main);
+            background-color: var(--bg-color);
+            overflow: hidden;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        /* Header & Controls */
+        .app-header {
+            padding: 10px 20px;
+            background: var(--header-bg);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 15px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            z-index: 10;
+            flex-wrap: wrap;
+            color: var(--text-secondary)!important;
+        }
+
+        .drop-zone {
+            flex-grow: 1;
+            min-width: 200px;
+            border: 2px dashed var(--border-color);
+            padding: 8px;
+            text-align: center;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 13px;
+        }
+
+        .drop-zone:hover {
+            border-color: #3498db;
+            background: rgba(52, 152, 219, 0.1);
+        }
+
+        .drop-zone.dragover {
+            border-color: #27ae60;
+            background: rgba(39, 174, 96, 0.1);
+        }
+
+        .controls-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .encoding-select, .search-box, .filter-select {
+            padding: 8px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            font-size: 13px;
+            outline: none;
+            background: var(--bg-color);
+            color: var(--text-main);
+        }
+
+        .search-box { width: 200px; }
+        .filter-select { width: 120px; }
+
+        .btn-header {
+            padding: 6px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            background: var(--bg-color);
+            color: var(--text-main);
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+
+        .btn-header:hover {
+            background: rgba(52, 152, 219, 0.1);
+            border-color: #3498db;
+        }
+
+        /* Loading Indicator */
+        .loading {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            color: white;
+        }
+
+        .loading.active {
+            display: flex;
+        }
+
+        .spinner {
+            border: 4px solid rgba(255,255,255,0.3);
+            border-top: 4px solid white;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin-bottom: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Virtual List Styling */
+        .table-header {
+            display: grid;
+            grid-template-columns: 30px 60px 180px 80px 120px 150px 1fr 120px;
+            background: var(--header-bg);
+            color: white;
+            font-weight: 600;
+            font-size: 13px;
+            padding: 0 15px;
+            height: 45px;
+            line-height: 45px;
+            z-index: 5;
+            position: relative;
+        }
+
+        .table-header > div {
+            cursor: pointer;
+            user-select: none;
+            position: relative;
+            padding-right: 20px;
+        }
+
+        .table-header > div:hover {
+            background: rgba(255,255,255,0.1);
+        }
+
+        .table-header > div::after {
+            content: ' ↕';
+            opacity: 0.5;
+            font-size: 10px;
+        }
+
+        /* Column Resizer */
+        .table-header > div {
+            position: relative;
+        }
+
+        .column-resizer {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 5px;
+            height: 100%;
+            cursor: col-resize;
+            z-index: 100;
+            background: transparent;
+            transition: background 0.2s;
+            margin-right: -2px;
+        }
+
+        .column-resizer:hover {
+            background: rgba(255, 255, 255, 0.4);
+        }
+
+        .column-resizer.resizing {
+            background: rgba(255, 255, 255, 0.6);
+        }
+
+        .table-header > div:last-child .column-resizer {
+            display: none;
+        }
+
+        #viewport {
+            flex-grow: 1;
+            overflow-y: auto;
+            position: relative;
+            background: var(--bg-color);
+            outline: none;
+        }
+
+        #spacer {
+            position: absolute;
+            top: 0; left: 0; width: 100%;
+            pointer-events: none;
+        }
+
+        #content {
+            position: absolute;
+            top: 0; left: 0; width: 100%;
+        }
+
+        .row {
+            display: grid;
+            grid-template-columns: 30px 60px 180px 80px 120px 150px 1fr 120px;
+            height: var(--row-height);
+            line-height: var(--row-height);
+            border-bottom: 1px solid var(--border-color);
+            font-size: 12px;
+            padding: 0 15px;
+            cursor: pointer;
+            transition: background 0.1s;
+            white-space: nowrap;
+            unicode-bidi: plaintext;
+            text-align: initial;
+            direction: ltr;
+            box-sizing: border-box;
+            background: var(--bg-color);
+        }
+
+        .row:hover { background-color: rgba(52, 152, 219, 0.1) !important; }
+
+        .row.selected {
+            background-color: var(--selected-row-bg) !important;
+            border-left: 4px solid var(--selected-row-border);
+            padding-left: 11px;
+        }
+
+        /* Zebra striping */
+        .row:nth-child(even) {
+            background-color: rgba(0, 0, 0, 0.02);
+        }
+
+        [data-theme="dark"] .row:nth-child(even) {
+            background-color: rgba(255, 255, 255, 0.02);
+        }
+
+        .row.selected:nth-child(even) {
+            background-color: var(--selected-row-bg) !important;
+        }
+
+        /* Highlight search matches */
+        mark {
+            background-color: #ffeb3b;
+            color: #000;
+            padding: 2px 0;
+            font-weight: bold;
+        }
+
+        [data-theme="dark"] mark {
+            background-color: #f9a825;
+            color: #000;
+        }
+
+        /* Custom word highlighting */
+        .custom-highlight {
+            padding: 2px 0;
+            font-weight: bold;
+        }
+
+        /* Highlight word picker */
+        .highlight-picker {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: var(--bg-color);
+            border: 2px solid var(--border-color);
+            border-radius: 8px;
+            padding: 20px;
+            z-index: 1000;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            min-width: 300px;
+            display: none;
+        }
+
+        .highlight-picker.active {
+            display: block;
+        }
+
+        .highlight-picker input[type="text"],
+        .highlight-picker input[type="color"] {
+            width: 100%;
+            padding: 8px;
+            margin: 10px 0;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            background: var(--bg-color);
+            color: var(--text-main);
+        }
+
+        .highlight-picker .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        /* Filter badges */
+        .filter-badges {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            margin-top: 5px;
+        }
+
+        .filter-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 8px;
+            background: var(--header-bg);
+            color: white;
+            border-radius: 12px;
+            font-size: 11px;
+            cursor: pointer;
+        }
+
+        .filter-badge:hover {
+            opacity: 0.8;
+        }
+
+        .filter-badge .remove {
+            cursor: pointer;
+            font-weight: bold;
+            margin-left: 4px;
+        }
+
+        /* File path display */
+        .file-path {
+            padding: 5px 20px;
+            background: var(--bg-color);
+            border-bottom: 1px solid var(--border-color);
+            font-size: 11px;
+            color: var(--text-main);
+            font-family: 'Consolas', 'Monaco', monospace;
+            word-break: break-all;
+            display: none;
+        }
+
+        .file-path.active {
+            display: block;
+        }
+
+        /* Tabs in details panel */
+        .details-tabs {
+            display: flex;
+            border-bottom: 1px solid var(--border-color);
+            background: var(--bg-color);
+        }
+
+        .details-tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            border: none;
+            background: transparent;
+            color: var(--text-main);
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .details-tab:hover {
+            background: rgba(52, 152, 219, 0.1);
+        }
+
+        .details-tab.active {
+            border-bottom-color: #3498db;
+            color: #3498db;
+            font-weight: bold;
+        }
+
+        .details-tab-content {
+            display: none;
+            padding: 20px;
+            overflow: auto;
+        }
+
+        .details-tab-content.active {
+            display: block;
+        }
+
+        /* Search in details panel */
+        .details-search {
+            padding: 10px 15px;
+            border-bottom: 1px solid var(--border-color);
+            background: var(--bg-color);
+        }
+
+        .details-search input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            background: var(--bg-color);
+            color: var(--text-main);
+        }
+
+        /* Favorite/Bookmark */
+        .row.bookmarked {
+            position: relative;
+        }
+
+        /* .row.bookmarked::before {
+            content: '⭐';
+            position: absolute;
+            left: 5px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 14px;
+        } */
+
+        .bookmark-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            padding: 2px 5px;
+            color: #f39c12;
+        }
+
+        .bookmark-btn:hover {
+            opacity: 0.7;
+        }
+
+        .row > div {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            padding-right: 10px;
+        }
+
+        .row.highlight {
+            background-color: rgba(255, 255, 0, 0.2) !important;
+        }
+
+        /* Status Colors */
+        .st-err { color: var(--error-color); font-weight: bold; }
+        .st-warn { color: var(--warning-color); font-weight: bold; }
+        .st-ok { color: var(--success-color); }
+
+        /* Statistics Panel */
+        .stats-panel {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: var(--header-bg);
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            font-size: 12px;
+            z-index: 50;
+            min-width: 200px;
+            display: none;
+        }
+
+        .stats-panel.active {
+            display: block;
+        }
+
+        .stats-panel h3 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            border-bottom: 1px solid rgba(255,255,255,0.2);
+            padding-bottom: 5px;
+        }
+
+        .stats-item {
+            margin: 5px 0;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        /* Resizable Details Panel */
+        #details-overlay {
+            position: fixed;
+            right: 0; top: 0; bottom: 0;
+            width: 600px;
+            min-width: 300px;
+            max-width: 100vw;
+            background: var(--bg-color);
+            box-shadow: -5px 0 15px rgba(0,0,0,0.1);
+            transform: translateX(100%);
+            transition: transform 0.3s ease, width 0.1s ease;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #details-overlay.open { transform: translateX(0); }
+        
+        #resizer {
+            width: 8px;
+            height: 100%;
+            background: transparent;
+            position: absolute;
+            left: -4px;
+            top: 0;
+            cursor: col-resize;
+            z-index: 101;
+        }
+        
+        #resizer:hover, .resizing #resizer {
+            background: rgba(52, 152, 219, 0.5);
+        }
+
+        .details-header {
+            padding: 10px 15px;
+            background: var(--header-bg);
+            color: white;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            user-select: none;
+        }
+
+        .details-actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .details-body {
+            flex-grow: 1;
+            padding: 20px;
+            overflow: auto;
+            background: var(--bg-color);
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            unicode-bidi: plaintext;
+            text-align: initial;
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            padding-bottom: 5px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .section-title {
+            font-weight: bold;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn {
+            cursor: pointer;
+            border: 1px solid rgba(255,255,255,0.3);
+            background: rgba(255,255,255,0.1);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            transition: background 0.2s;
+        }
+
+        .btn:hover { background: rgba(255,255,255,0.2); }
+
+        .btn-small {
+            padding: 2px 6px;
+            font-size: 10px;
+            border-color: var(--border-color);
+            background: var(--bg-color);
+            color: var(--text-main);
+        }
+        .btn-small:hover { background: rgba(52, 152, 219, 0.1); }
+
+        .close-btn { font-size: 18px; line-height: 1; border: none; background: none; color: white; cursor: pointer; }
+
+        /* JSON Tree Styling */
+        .json-tree { list-style: none; padding-left: 20px; margin: 0; }
+        .json-node { margin: 2px 0; }
+        .json-toggle {
+            cursor: pointer;
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            line-height: 12px;
+            text-align: center;
+            font-size: 10px;
+            margin-right: 5px;
+            transition: transform 0.2s;
+            user-select: none;
+        }
+        .json-toggle.collapsed { transform: rotate(-90deg); }
+        .json-key { color: var(--json-key); font-weight: bold; }
+        .json-string { color: var(--json-string); }
+        .json-number { color: var(--json-number); }
+        .json-bool { color: var(--json-bool); }
+        .json-null { color: #888; font-style: italic; }
+        .collapsed-content { display: none; }
+        .nested-label { font-size: 11px; color: #fff; background: #3498db; padding: 1px 4px; border-radius: 3px; margin-left: 5px; }
+
+        /* Raw message collapse */
+        .raw-content {
+            white-space: pre-wrap;
+            margin-bottom: 20px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            overflow: hidden;
+            color: var(--text-main);
+        }
+        .raw-content.collapsed {
+            white-space: nowrap;
+            text-overflow: ellipsis;
+            max-height: 1.5em;
+        }
+
+        body.resizing { cursor: col-resize; user-select: none; }
+
+        /* Toast notifications */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: var(--header-bg);
+            color: white;
+            padding: 12px 20px;
+            border-radius: 6px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            z-index: 1001;
+            transition: transform 0.3s;
+        }
+
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+        }
+    </style>
+</head>
+<body>
+    <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <div>Loading file...</div>
+    </div>
+
+    <div class="app-header">
+        <div id="drop-zone" class="drop-zone" role="button" tabindex="0" aria-label="Drop zone for log files">Click or drag a log file here</div>
+        <input type="file" id="file-input" style="display: none;" accept=".log,.txt,.json">
+        
+        <div class="controls-group">
+            <label for="encoding-select" style="font-size: 12px;">Encoding:</label>
+            <select id="encoding-select" class="encoding-select" aria-label="File encoding">
+                <option value="windows-1255" selected>Hebrew (Windows-1255)</option>
+                <option value="UTF-8">UTF-8 (Standard)</option>
+                <option value="ISO-8859-8">Hebrew (ISO-8859-8)</option>
+                <option value="ISO-8859-1">Western (ISO-8859-1)</option>
+            </select>
+            <select id="filter-level" class="filter-select" aria-label="Filter by log level" hidden>
+                <option value="">All Levels</option>
+                <option value="ERROR">ERROR</option>
+                <option value="WARN">WARN</option>
+                <option value="INFO">INFO</option>
+                <option value="DEBUG">DEBUG</option>
+            </select>
+            <input type="text" id="search" class="search-box" placeholder="Filter logs..." hidden aria-label="Search logs">
+            <input type="text" id="filter-id" class="search-box" placeholder="Filter by ID..." hidden style="width: 150px;" aria-label="Filter by ID">
+            <input type="text" id="filter-source" class="search-box" placeholder="Filter by Source..." hidden style="width: 150px;" aria-label="Filter by Source">
+            <input type="number" id="jump-to-line" class="search-box" placeholder="Line #" hidden style="width: 80px;" aria-label="Jump to line number" min="1">
+            <button class="btn-header" id="btn-jump" hidden aria-label="Jump to line">Jump</button>
+            <button class="btn-header" id="btn-refresh" hidden aria-label="Refresh file">🔄 Refresh</button>
+            <button class="btn-header" id="btn-export" hidden aria-label="Export logs">Export</button>
+            <button class="btn-header" id="btn-export-bookmarks" hidden aria-label="Export bookmarks only">Export Bookmarks</button>
+            <button class="btn-header" id="btn-stats" hidden aria-label="Show statistics">Stats</button>
+            <button class="btn-header" id="btn-clear-bookmarks" hidden aria-label="Clear all bookmarks">Clear Bookmarks</button>
+            <button class="btn-header" id="btn-highlight" hidden aria-label="Highlight word">Highlight</button>
+            <button class="btn-header" id="btn-theme" aria-label="Toggle dark mode">🌙</button>
+        </div>
+        
+        <div id="stats" style="font-size: 11px; min-width: 100px;">Ready.</div>
+    </div>
+
+    <div class="file-path" id="file-path"></div>
+
+    <div class="table-header" role="row">
+        <div data-sort="bookmark" role="columnheader" aria-sort="none"></div>
+        <div data-sort="lineNumber" role="columnheader" aria-sort="none">Line</div>
+        <div data-sort="date" role="columnheader" aria-sort="none">Date / Time</div>
+        <div data-sort="method" role="columnheader" aria-sort="none">Level</div>
+        <div data-sort="userId" role="columnheader" aria-sort="none">ID</div>
+        <div data-sort="source" role="columnheader" aria-sort="none">Source</div>
+        <div data-sort="path" role="columnheader" aria-sort="none">Message / Path</div>
+        <div data-sort="ip" role="columnheader" aria-sort="none">IP / Source</div>
+    </div>
+
+    <div id="viewport" tabindex="0" role="grid" aria-label="Log entries">
+        <div id="spacer"></div>
+        <div id="content"></div>
+    </div>
+
+    <div class="stats-panel" id="stats-panel" role="dialog" aria-label="Statistics">
+        <h3>Statistics</h3>
+        <div id="stats-content"></div>
+    </div>
+
+    <div id="details-overlay" role="dialog" aria-label="Log details" aria-hidden="true">
+        <div id="resizer"></div>
+        <div class="details-header">
+            <span>Detailed Analysis</span>
+            <div class="details-actions">
+                <button class="btn" onclick="toggleMaximize()" aria-label="Maximize panel">Maximize</button>
+                <button class="btn" onclick="copyAll()" aria-label="Copy all content">Copy All</button>
+                <button class="close-btn" onclick="closeDetails()" aria-label="Close details">&times;</button>
+            </div>
+        </div>
+        <div class="details-search" id="details-search" style="display: none;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <input type="text" id="details-search-input" placeholder="Search in details..." aria-label="Search in details" style="flex: 1;">
+                <span id="details-search-results" style="font-size: 12px; color: var(--text-main); min-width: 100px; text-align: right;"></span>
+                <button class="btn" id="btn-search-prev" aria-label="Previous result" style="padding: 4px 8px; font-size: 12px;color: var(--text-main); display: none;" disabled>◀ Prev</button>
+                <button class="btn" id="btn-search-next" aria-label="Next result" style="padding: 4px 8px; font-size: 12px;color: var(--text-main); display: none;" disabled>Next ▶</button>
+            </div>
+        </div>
+        <div class="details-tabs">
+            <button class="details-tab active" data-tab="raw" onclick="switchDetailsTab('raw')">RAW</button>
+            <button class="details-tab" data-tab="json" onclick="switchDetailsTab('json')">JSON</button>
+            <button class="details-tab" data-tab="metadata" onclick="switchDetailsTab('metadata')">Metadata</button>
+        </div>
+        <div id="details-body" class="details-body" style="padding: 0; overflow: hidden; display: flex; flex-direction: column;">
+            <div class="details-tab-content active" id="tab-raw" style="flex: 1; overflow: auto; padding: 20px;"></div>
+            <div class="details-tab-content" id="tab-json" style="flex: 1; overflow: auto; padding: 20px;"></div>
+            <div class="details-tab-content" id="tab-metadata" style="flex: 1; overflow: auto; padding: 20px;"></div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast" role="alert" aria-live="polite"></div>
+
+    <!-- Highlight Picker Modal -->
+    <div id="highlight-picker" class="highlight-picker">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <h3 style="margin: 0;">Highlight Word</h3>
+            <button class="close-btn" onclick="closeHighlightPicker()" style="font-size: 20px; line-height: 1; border: none; background: none; color: var(--text-main); cursor: pointer; padding: 0; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;" aria-label="Close highlight picker">&times;</button>
+        </div>
+        <label>Word to highlight:</label>
+        <input type="text" id="highlight-word" placeholder="Enter word or phrase">
+        <label>Color:</label>
+        <input type="color" id="highlight-color" value="#ffff00">
+        <div class="btn-group">
+            <button class="btn" onclick="applyHighlight()" style="flex: 1;color: var(--text-main);">Apply</button>
+            <button class="btn" onclick="clearAllHighlights()" style="flex: 1;color: var(--text-main);">Clear All</button>
+            <button class="btn" onclick="closeHighlightPicker()" style="flex: 1;color: var(--text-main);">Cancel</button>
+        </div>
+    </div>
+
+<script>
+    /**
+     * Application State
+     */
+    const ROW_HEIGHT = 40;
+    const VISIBLE_COUNT = 40;
+    let allLogs = [];
+    let filteredLogs = [];
+    let currentFile = null;
+    let isMaximized = false;
+    let originalWidth = 600;
+    let selectedIndex = -1;
+    let sortColumn = null;
+    let sortDirection = 'asc';
+    let searchDebounceTimer = null;
+    let statusClassCache = new Map();
+    let bookmarkedLogs = new Set(); // Store bookmarked log IDs (not indices)
+    let columnWidths = [30, 60, 180, 80, 120, 150, null, 120]; // null means 1fr (flexible)
+    let isColumnResizing = false;
+    let activeFilters = {
+        search: '',
+        level: '',
+        id: '',
+        source: ''
+    };
+    let currentDetailsTab = 'raw';
+    
+    const viewport = document.getElementById('viewport');
+    const spacer = document.getElementById('spacer');
+    const content = document.getElementById('content');
+    const searchInput = document.getElementById('search');
+    const filterId = document.getElementById('filter-id');
+    const filterSource = document.getElementById('filter-source');
+    const encodingSelect = document.getElementById('encoding-select');
+    const detailsOverlay = document.getElementById('details-overlay');
+    const resizer = document.getElementById('resizer');
+    const detailsBody = document.getElementById('details-body');
+    const loading = document.getElementById('loading');
+    const filterLevel = document.getElementById('filter-level');
+    const btnRefresh = document.getElementById('btn-refresh');
+    const btnExport = document.getElementById('btn-export');
+    const btnExportBookmarks = document.getElementById('btn-export-bookmarks');
+    const btnStats = document.getElementById('btn-stats');
+    const btnClearBookmarks = document.getElementById('btn-clear-bookmarks');
+    const btnJump = document.getElementById('btn-jump');
+    const jumpToLineInput = document.getElementById('jump-to-line');
+    const btnHighlight = document.getElementById('btn-highlight');
+    const statsPanel = document.getElementById('stats-panel');
+    const btnTheme = document.getElementById('btn-theme');
+    const filePathDisplay = document.getElementById('file-path');
+    const detailsSearchInput = document.getElementById('details-search-input');
+    const detailsSearchResults = document.getElementById('details-search-results');
+    const btnSearchPrev = document.getElementById('btn-search-prev');
+    const btnSearchNext = document.getElementById('btn-search-next');
+    
+    // Custom word highlighting state
+    let customHighlights = new Map(); // word -> color
+    let detailsSearchMatches = [];
+    let currentSearchMatchIndex = -1;
+
+    /**
+     * Utility: Debounce function
+     */
+    function debounce(func, wait) {
+        return function executedFunction(...args) {
+            const later = () => {
+                clearTimeout(searchDebounceTimer);
+                func(...args);
+            };
+            clearTimeout(searchDebounceTimer);
+            searchDebounceTimer = setTimeout(later, wait);
+        };
+    }
+
+    /**
+     * Utility: Show toast notification
+     */
+    function showToast(message, duration = 3000) {
+        const toast = document.getElementById('toast');
+        toast.textContent = message;
+        toast.classList.add('show');
+        setTimeout(() => {
+            toast.classList.remove('show');
+        }, duration);
+    }
+
+    /**
+     * Utility: Safe text content (prevent XSS)
+     */
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    /**
+     * Utility: Escape regex special characters
+     */
+    function escapeRegex(str) {
+        if (!str) return '';
+        return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    /**
+     * Utility: Highlight search matches in text
+     */
+    function highlightText(text, searchTerms) {
+        if (!text) {
+            return '';
+        }
+        
+        let highlighted = escapeHtml(text);
+        
+        // Apply custom highlights first (store positions to avoid double highlighting)
+        const customHighlightRanges = [];
+        customHighlights.forEach((color, word) => {
+            if (word && word.trim()) {
+                const regex = new RegExp(escapeRegex(word), 'gi');
+                let match;
+                while ((match = regex.exec(highlighted)) !== null) {
+                    customHighlightRanges.push({
+                        start: match.index,
+                        end: match.index + match[0].length,
+                        color: color,
+                        word: match[0]
+                    });
+                }
+            }
+        });
+        
+        // Sort by position and apply custom highlights (from end to start to preserve indices)
+        customHighlightRanges.sort((a, b) => b.start - a.start);
+        customHighlightRanges.forEach(range => {
+            const before = highlighted.substring(0, range.start);
+            const match = highlighted.substring(range.start, range.end);
+            const after = highlighted.substring(range.end);
+            highlighted = before + `<span class="custom-highlight" style="background-color: ${range.color};">${match}</span>` + after;
+        });
+        
+        // Then apply search highlights (simple replacement, will work even if overlapping)
+        if (searchTerms && searchTerms.length > 0) {
+            const terms = Array.isArray(searchTerms) ? searchTerms : [searchTerms];
+            terms.forEach(term => {
+                if (term && term.trim()) {
+                    const regex = new RegExp(`(${escapeRegex(term)})`, 'gi');
+                    highlighted = highlighted.replace(regex, '<mark>$1</mark>');
+                }
+            });
+        }
+        
+        return highlighted;
+    }
+
+    /**
+     * Regex patterns for extraction
+     */
+    const patterns = {
+        ip: /(\d{1,3}\.){3}\d{1,3}/,
+        date: /(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})|(\d{2}\/\w{3}\/\d{4}:\d{2}:\d{2}:\d{2})|(\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2}(\.\d+)?)/,
+        level: /(ERROR|WARN|INFO|DEBUG|CRITICAL|SEVERE|EXCEPTION|FATAL)/i,
+        httpStatus: / (20[0-6]|40[0-9]|50[0-9]) /,
+        userId: /([a-f0-9]{5,6}:[a-f0-9\-]+)/i,  // Pattern for user ID like "1551de:287", "1551de:b2e", or "1551de:---"
+        source: /\s+(?!(?:INFO|DEBUG|ERROR|WARN|CRITICAL|SEVERE|EXCEPTION|FATAL|Info|Debug|Error|Warn|Trace|TRACE)\b)([A-Z][a-z]{2,}[A-Z][a-zA-Z0-9.]*|[A-Z][a-zA-Z0-9.]*(?:Service|Helper|Manager|Handler|Controller|Provider|Repository|Factory|Builder|Adapter|Client|Server|Worker|Processor|Validator|Parser|Generator|Extractor|Transformer|Converter|Loader|Saver|Reader|Writer|Cache|Store|Queue|Pool|Registry|Singleton|Proxy|Decorator|Facade|Mediator|Observer|Strategy|Command|State|Visitor|Template|Prototype|Bridge|Composite|Flyweight|Chain|Interpreter|Iterator|Memento)|[A-Z][a-zA-Z0-9]+\.[a-zA-Z0-9]+)\s+/  // Pattern for source like "CatalogHelper", "BedrockService", "Global.asax" (excludes log levels, allows dots)
+    };
+
+    /**
+     * Standard Log Formats
+     */
+    const mainParsers = [
+        {
+            name: 'Standard Web',
+            regex: /^(\S+) \S+ \S+ \[(.*?)\] "(\S+) (\S+) \S+" (\d{3}) (\d+|-)/,
+            map: (m) => {
+                const line = m[0];
+                const foundUserId = line.match(patterns.userId);
+                const foundSource = line.match(patterns.source);
+                return {
+                    id: `log_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                    ip: m[1],
+                    date: m[2],
+                    userId: foundUserId ? foundUserId[1] : '-',
+                    source: foundSource ? foundSource[1] : '-',
+                    method: m[3],
+                    path: m[4],
+                    raw: m[0]
+                };
+            }
+        },
+        {
+            name: 'MatrixLog Format',
+            regex: /\[(.*?)\]\s+(\w+)\s+([a-f0-9]{5,6}:[a-f0-9\-]+)\s+([A-Z][a-zA-Z0-9.]+)\s+(.+)/i,
+            map: (m) => ({
+                id: `log_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                ip: '-',
+                date: m[1],
+                userId: m[3],
+                source: m[4],
+                method: m[2].toUpperCase(),
+                path: m[5],
+                raw: m[0]
+            })
+        }
+    ];
+
+    /**
+     * Setup Event Listeners
+     */
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    
+    dropZone.onclick = () => fileInput.click();
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('dragover');
+    });
+    dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('dragover');
+    });
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        if (e.dataTransfer.files.length > 0) {
+            currentFile = e.dataTransfer.files[0];
+            // For drag & drop, we can't get the full path due to browser security
+            // But we can try to get it from the file object if available
+            if (e.dataTransfer.items && e.dataTransfer.items[0]) {
+                const entry = e.dataTransfer.items[0].webkitGetAsEntry();
+                if (entry && entry.fullPath) {
+                    currentFile.fullPath = entry.fullPath;
+                }
+            }
+            loadFile();
+        }
+    });
+    
+    fileInput.onchange = (e) => {
+        currentFile = e.target.files[0];
+        if (currentFile) {
+            // Store the path from input value if available (but browsers may mask it with fakepath)
+            if (e.target.value) {
+                const inputValue = e.target.value;
+                // Only store if it's not fakepath (browser security restriction)
+                if (!inputValue.includes('fakepath')) {
+                    currentFile.fullPath = inputValue;
+                } else {
+                    // Store just the filename
+                    currentFile.fullPath = inputValue.replace(/^.*[\\\/]/, '');
+                }
+            }
+            loadFile();
+        }
+    };
+    
+    encodingSelect.onchange = () => {
+        if (currentFile) loadFile();
+    };
+
+    filterLevel.onchange = () => {
+        activeFilters.level = filterLevel.value;
+        applyFilters();
+    };
+
+    filterId.oninput = debounce(() => {
+        activeFilters.id = filterId.value;
+        applyFilters();
+    }, 300);
+
+    filterSource.oninput = debounce(() => {
+        activeFilters.source = filterSource.value;
+        applyFilters();
+    }, 300);
+
+    btnRefresh.onclick = () => {
+        if (currentFile) {
+            loadFile();
+            showToast('Refreshing file...');
+        } else {
+            showToast('No file loaded');
+        }
+    };
+    btnExport.onclick = exportLogs;
+    btnExportBookmarks.onclick = exportBookmarks;
+    btnStats.onclick = toggleStats;
+    btnClearBookmarks.onclick = clearAllBookmarks;
+    btnJump.onclick = jumpToLine;
+    btnHighlight.onclick = showHighlightPicker;
+    btnTheme.onclick = toggleTheme;
+    
+    // Jump to line on Enter key
+    if (jumpToLineInput) {
+        jumpToLineInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                jumpToLine();
+            }
+        });
+    }
+    
+    // Details search navigation
+    if (btnSearchPrev) btnSearchPrev.onclick = () => navigateSearchResults(-1);
+    if (btnSearchNext) btnSearchNext.onclick = () => navigateSearchResults(1);
+
+    // Keyboard Navigation
+    document.addEventListener('keydown', (e) => {
+        if (filteredLogs.length === 0) return;
+        
+        if (document.activeElement === searchInput || document.activeElement === filterLevel) return;
+
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            selectedIndex = Math.min(selectedIndex + 1, filteredLogs.length - 1);
+            handleSelectionChange();
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            selectedIndex = Math.max(selectedIndex - 1, 0);
+            handleSelectionChange();
+        } else if (e.key === 'Escape') {
+            closeDetails();
+        } else if (e.key === 'f' && e.ctrlKey) {
+            e.preventDefault();
+            searchInput.focus();
+        }
+    });
+
+    // Column sorting
+    document.querySelectorAll('.table-header > div[data-sort]').forEach(header => {
+        header.addEventListener('click', () => {
+            const column = header.getAttribute('data-sort');
+            if (sortColumn === column) {
+                sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                sortColumn = column;
+                sortDirection = 'asc';
+            }
+            sortLogs();
+            updateSortIndicators();
+        });
+    });
+
+    function updateSortIndicators() {
+        document.querySelectorAll('.table-header > div[data-sort]').forEach(header => {
+            const col = header.getAttribute('data-sort');
+            header.setAttribute('aria-sort', 
+                sortColumn === col ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'
+            );
+        });
+    }
+
+    /**
+     * Column Resizing
+     */
+    function initColumnResizers() {
+        const header = document.querySelector('.table-header');
+        if (!header) return;
+        
+        // Remove existing resizers first
+        header.querySelectorAll('.column-resizer').forEach(r => r.remove());
+        
+        // Load saved widths
+        const savedWidths = localStorage.getItem('logAnalyzerColumnWidthsBriut');
+        if (savedWidths) {
+            try {
+                const parsed = JSON.parse(savedWidths);
+                if (Array.isArray(parsed) && parsed.length === columnWidths.length) {
+                    columnWidths = parsed;
+                }
+            } catch (e) {
+                console.warn('Failed to load column widths:', e);
+            }
+        }
+        
+        applyColumnWidths();
+        
+        // Add resizers to each column header (except last)
+        const headers = header.querySelectorAll(':scope > div');
+        headers.forEach((headerDiv, index) => {
+            if (index === headers.length - 1) return; // Skip last column
+            
+            // Ensure parent has relative positioning
+            if (window.getComputedStyle(headerDiv).position === 'static') {
+                headerDiv.style.position = 'relative';
+            }
+            
+            const resizer = document.createElement('div');
+            resizer.className = 'column-resizer';
+            resizer.setAttribute('data-column-index', index);
+            resizer.setAttribute('title', 'Drag to resize column');
+            headerDiv.appendChild(resizer);
+            
+            let startX, startWidth, currentIndex;
+            
+            resizer.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                isColumnResizing = true;
+                currentIndex = index;
+                startX = e.clientX;
+                
+                // Get current width from computed style
+                const header = document.querySelector('.table-header');
+                const computedStyle = window.getComputedStyle(header);
+                const gridTemplateColumns = computedStyle.gridTemplateColumns.split(' ');
+                if (gridTemplateColumns[index] && gridTemplateColumns[index] !== '1fr') {
+                    startWidth = parseInt(gridTemplateColumns[index]) || columnWidths[index] || 100;
+                } else {
+                    startWidth = columnWidths[index] || getColumnWidth(index);
+                }
+                
+                resizer.classList.add('resizing');
+                document.body.style.cursor = 'col-resize';
+                document.body.style.userSelect = 'none';
+                document.body.style.pointerEvents = 'none';
+                resizer.style.pointerEvents = 'auto';
+                
+                const handleMouseMove = (e) => {
+                    if (!isColumnResizing) return;
+                    e.preventDefault();
+                    const diff = e.clientX - startX;
+                    const newWidth = Math.max(50, startWidth + diff); // Min width 50px
+                    columnWidths[currentIndex] = newWidth;
+                    applyColumnWidths();
+                };
+                
+                const handleMouseUp = (e) => {
+                    e.preventDefault();
+                    isColumnResizing = false;
+                    resizer.classList.remove('resizing');
+                    document.body.style.cursor = '';
+                    document.body.style.userSelect = '';
+                    document.body.style.pointerEvents = '';
+                    resizer.style.pointerEvents = '';
+                    saveColumnWidths();
+                    document.removeEventListener('mousemove', handleMouseMove);
+                    document.removeEventListener('mouseup', handleMouseUp);
+                };
+                
+                document.addEventListener('mousemove', handleMouseMove);
+                document.addEventListener('mouseup', handleMouseUp);
+            });
+        });
+    }
+    
+    function getColumnWidth(index) {
+        const header = document.querySelector('.table-header');
+        if (!header) return columnWidths[index] || 100;
+        
+        const computedStyle = window.getComputedStyle(header);
+        const gridTemplateColumns = computedStyle.gridTemplateColumns.split(' ');
+        if (gridTemplateColumns[index]) {
+            const width = parseInt(gridTemplateColumns[index]);
+            return isNaN(width) ? 100 : width;
+        }
+        return columnWidths[index] || 100;
+    }
+    
+    function applyColumnWidths() {
+        const header = document.querySelector('.table-header');
+        const rows = document.querySelectorAll('.row');
+        
+        if (!header) return;
+        
+        const gridTemplate = columnWidths.map((width, index) => {
+            if (width === null) return '1fr';
+            return `${width}px`;
+        }).join(' ');
+        
+        header.style.gridTemplateColumns = gridTemplate;
+        rows.forEach(row => {
+            row.style.gridTemplateColumns = gridTemplate;
+        });
+    }
+    
+    function saveColumnWidths() {
+        localStorage.setItem('logAnalyzerColumnWidthsBriut', JSON.stringify(columnWidths));
+    }
+    
+    // Initialize resizers after DOM is ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initColumnResizers);
+    } else {
+        setTimeout(initColumnResizers, 100); // Small delay to ensure header is rendered
+    }
+
+    function sortLogs() {
+        if (!sortColumn) return;
+        
+        filteredLogs.sort((a, b) => {
+            let aVal, bVal;
+            
+            // Special handling for bookmark column
+            if (sortColumn === 'bookmark') {
+                const aBookmarked = a.id && bookmarkedLogs.has(a.id);
+                const bBookmarked = b.id && bookmarkedLogs.has(b.id);
+                // Sort: bookmarked first (true > false)
+                if (aBookmarked && !bBookmarked) return sortDirection === 'asc' ? -1 : 1;
+                if (!aBookmarked && bBookmarked) return sortDirection === 'asc' ? 1 : -1;
+                return 0;
+            }
+            
+            // Special handling for lineNumber column (numeric sort)
+            if (sortColumn === 'lineNumber') {
+                const aLine = a.lineNumber || 0;
+                const bLine = b.lineNumber || 0;
+                if (aLine < bLine) return sortDirection === 'asc' ? -1 : 1;
+                if (aLine > bLine) return sortDirection === 'asc' ? 1 : -1;
+                return 0;
+            }
+            
+            aVal = a[sortColumn];
+            bVal = b[sortColumn];
+            
+            // Handle null/undefined values
+            if (aVal == null && bVal == null) return 0;
+            if (aVal == null) return sortDirection === 'asc' ? 1 : -1;
+            if (bVal == null) return sortDirection === 'asc' ? -1 : 1;
+            
+            // Handle numeric values (if needed in the future)
+            
+            if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
+            if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
+            return 0;
+        });
+        
+        selectedIndex = -1;
+        render();
+    }
+
+    function handleSelectionChange() {
+        if (selectedIndex === -1) return;
+        
+        render();
+        showDetails(selectedIndex);
+        
+        const rowTop = selectedIndex * ROW_HEIGHT;
+        const rowBottom = rowTop + ROW_HEIGHT;
+        const viewTop = viewport.scrollTop;
+        const viewBottom = viewTop + viewport.clientHeight;
+
+        if (rowTop < viewTop) {
+            viewport.scrollTop = rowTop;
+        } else if (rowBottom > viewBottom) {
+            viewport.scrollTop = rowBottom - viewport.clientHeight;
+        }
+    }
+
+    function loadFile() {
+        if (!currentFile) return;
+        
+        loading.classList.add('active');
+        
+        const reader = new FileReader();
+        const encoding = encodingSelect.value;
+        
+        reader.onload = (e) => {
+            try {
+                const rawLines = e.target.result.split('\n').filter(l => l.trim() !== '');
+                processFileContent(rawLines);
+                // Display full file path
+                if (currentFile && filePathDisplay) {
+                    let filePath = '';
+                    // Try multiple methods to get the full path
+                    if (currentFile.fullPath && !currentFile.fullPath.includes('fakepath')) {
+                        // Use stored full path from input (only if it's not fakepath)
+                        filePath = currentFile.fullPath;
+                    } else if (currentFile.path && !currentFile.path.includes('fakepath')) {
+                        // Some browsers expose path property (only if it's not fakepath)
+                        filePath = currentFile.path;
+                    } else if (currentFile.webkitRelativePath) {
+                        // For webkit browsers with directory selection
+                        filePath = currentFile.webkitRelativePath;
+                    } else {
+                        // Try to get from input value
+                        const input = document.getElementById('file-input');
+                        if (input && input.value) {
+                            const inputValue = input.value;
+                            // Check if it contains fakepath (browser security restriction)
+                            if (inputValue.includes('fakepath')) {
+                                // Extract just the filename
+                                filePath = inputValue.replace(/^.*[\\\/]/, '');
+                            } else {
+                                // Use the full path if available
+                                filePath = inputValue;
+                            }
+                        }
+                        // Fallback to filename if no path found
+                        if (!filePath && currentFile.name) {
+                            filePath = currentFile.name;
+                        }
+                    }
+                    if (filePath) {
+                        filePathDisplay.textContent = `File: ${filePath}`;
+                        filePathDisplay.classList.add('active');
+                    }
+                }
+                showToast(`Loaded ${rawLines.length} log entries`);
+            } catch (error) {
+                showToast(`Error loading file: ${error.message}`, 5000);
+                console.error('Error processing file:', error);
+            } finally {
+                loading.classList.remove('active');
+            }
+        };
+        
+        reader.onerror = () => {
+            loading.classList.remove('active');
+            showToast('Error reading file', 5000);
+        };
+        
+        reader.readAsText(currentFile, encoding);
+    }
+
+    /**
+     * Smart Heuristic Parsing
+     */
+    function smartRawParse(line) {
+        const foundIp = line.match(patterns.ip);
+        const foundDate = line.match(patterns.date);
+        const foundLevel = line.match(patterns.level);
+        const foundStatus = line.match(patterns.httpStatus);
+        const foundUserId = line.match(patterns.userId);
+        const foundSource = line.match(patterns.source);
+        
+        // Extract message - everything after date, level, userId, and source
+        let message = line;
+        if (foundDate) {
+            // Remove date part
+            const dateIndex = line.indexOf(foundDate[0]);
+            let afterDate = line.substring(dateIndex + foundDate[0].length).trim();
+            
+            // Remove level if found
+            if (foundLevel) {
+                const levelIndex = afterDate.indexOf(foundLevel[0]);
+                if (levelIndex !== -1) {
+                    afterDate = afterDate.substring(levelIndex + foundLevel[0].length).trim();
+                }
+            }
+            
+            // Remove userId if found
+            if (foundUserId) {
+                const userIdIndex = afterDate.indexOf(foundUserId[0]);
+                if (userIdIndex !== -1) {
+                    afterDate = afterDate.substring(userIdIndex + foundUserId[0].length).trim();
+                }
+            }
+            
+            // Remove source if found
+            if (foundSource) {
+                const sourceIndex = afterDate.indexOf(foundSource[1]);
+                if (sourceIndex !== -1) {
+                    message = afterDate.substring(sourceIndex + foundSource[1].length).trim();
+                } else {
+                    message = afterDate;
+                }
+            } else {
+                message = afterDate;
+            }
+        }
+        
+        return {
+            id: `log_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            ip: foundIp ? foundIp[0] : 'RAW',
+            date: foundDate ? foundDate[0] : '-',
+            userId: foundUserId ? foundUserId[1] : '-',
+            source: foundSource ? foundSource[1] : '-',
+            method: foundLevel ? foundLevel[0].toUpperCase() : '-',
+            path: message || line,
+            raw: line
+        };
+    }
+
+    /**
+     * Get status class with caching
+     */
+    function getStatusClass(log) {
+        const cacheKey = `${log.method}-${log.path}-${log.userId || ''}-${log.source || ''}`;
+        if (statusClassCache.has(cacheKey)) {
+            return statusClassCache.get(cacheKey);
+        }
+        
+        const methodVal = String(log.method).toLowerCase();
+        const pathLower = log.path.toLowerCase();
+        
+        let statusClass = "";
+        const isError = pathLower.includes('error') || pathLower.includes('fail') || 
+                       methodVal.includes('error') || methodVal.includes('crit') || 
+                       methodVal.includes('fatal') || methodVal.includes('severe');
+        const isWarn = pathLower.includes('warn') || methodVal.includes('warn');
+        
+        if (isError) statusClass = "st-err";
+        else if (isWarn) statusClass = "st-warn";
+        else if (methodVal.includes('info') || methodVal.includes('debug')) statusClass = "st-ok";
+        
+        statusClassCache.set(cacheKey, statusClass);
+        return statusClass;
+    }
+
+    /**
+     * Process lines
+     */
+    function processFileContent(lines) {
+        selectedIndex = -1;
+        statusClassCache.clear();
+        const parseErrors = [];
+        
+        allLogs = lines.map((line, index) => {
+            const trimmed = line.trim();
+            const isJson = (trimmed.startsWith('{') && trimmed.endsWith('}')) || 
+                          (trimmed.startsWith('[') && trimmed.endsWith(']'));
+            
+            let log;
+            if (isJson) {
+                try {
+                    const j = JSON.parse(line);
+                    // Try to extract userId and source from the raw line even if it's JSON
+                    const foundUserId = line.match(patterns.userId);
+                    const foundSource = line.match(patterns.source);
+                    log = {
+                        id: `log_${index}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                        ip: j.ip || j.remote_addr || (Array.isArray(j) ? 'ARRAY' : 'JSON'),
+                        date: j.time || j.timestamp || j.date || '-',
+                        userId: j.userId || j.user_id || j.id || (foundUserId ? foundUserId[1] : '-'),
+                        source: j.source || j.service || (foundSource ? foundSource[1] : '-'),
+                        method: j.level || j.method || 'INFO',
+                        path: j.message || j.msg || j.url || line,
+                        raw: line
+                    };
+                } catch (e) {
+                    parseErrors.push({ line: index + 1, error: e.message });
+                    return null;
+                }
+            } else {
+                for (let p of mainParsers) {
+                    const m = line.match(p.regex);
+                    if (m) {
+                        log = p.map(m);
+                        break;
+                    }
+                }
+                if (!log) {
+                    log = smartRawParse(line);
+                }
+            }
+            
+            // Add line number to each log
+            if (log) {
+                log.lineNumber = index + 1;
+            }
+            return log;
+        }).filter(log => log !== null);
+        
+        if (parseErrors.length > 0) {
+            console.warn(`${parseErrors.length} parsing errors occurred`);
+        }
+        
+        filteredLogs = [...allLogs];
+        searchInput.hidden = false;
+        filterLevel.hidden = false;
+        filterId.hidden = false;
+        filterSource.hidden = false;
+        btnRefresh.hidden = false;
+        btnExport.hidden = false;
+        btnExportBookmarks.hidden = false;
+        btnStats.hidden = false;
+        btnClearBookmarks.hidden = false;
+        btnJump.hidden = false;
+        jumpToLineInput.hidden = false;
+        btnHighlight.hidden = false;
+        
+        // Clear bookmarks when new file is loaded
+        bookmarkedLogs.clear();
+        
+        const statsText = `${allLogs.length} lines loaded`;
+        document.getElementById('stats').textContent = statsText;
+        
+        applyFilters();
+        render();
+        
+        // Initialize column resizers after rendering
+        setTimeout(initColumnResizers, 50);
+    }
+
+    /**
+     * Apply all filters
+     */
+    function applyFilters() {
+        // Sync activeFilters.level with filterLevel value
+        if (filterLevel && filterLevel.value) {
+            activeFilters.level = filterLevel.value;
+        }
+        
+        const searchVal = activeFilters.search.toLowerCase();
+        const levelVal = activeFilters.level || '';
+        const idVal = activeFilters.id.toLowerCase();
+        const sourceVal = activeFilters.source.toLowerCase();
+        
+        filteredLogs = allLogs.filter(log => {
+            const matchesSearch = !searchVal || 
+                log.path.toLowerCase().includes(searchVal) || 
+                log.ip.toLowerCase().includes(searchVal) || 
+                log.method.toLowerCase().includes(searchVal) ||
+                (log.userId && log.userId.toLowerCase().includes(searchVal)) ||
+                (log.source && log.source.toLowerCase().includes(searchVal));
+            
+            const matchesLevel = !levelVal || 
+                log.method.toUpperCase() === levelVal.toUpperCase();
+            
+            const matchesId = !idVal || 
+                (log.userId && log.userId.toLowerCase().includes(idVal));
+            
+            const matchesSource = !sourceVal || 
+                (log.source && log.source.toLowerCase().includes(sourceVal));
+            
+            return matchesSearch && matchesLevel && matchesId && matchesSource;
+        });
+        
+        selectedIndex = -1;
+        if (sortColumn) sortLogs();
+        else render();
+        
+        updateFilterBadges();
+        document.getElementById('stats').textContent = 
+            `${filteredLogs.length} of ${allLogs.length} entries`;
+    }
+
+    /**
+     * Update filter badges display
+     */
+    function updateFilterBadges() {
+        // Remove existing badges container if any
+        let badgesContainer = document.getElementById('filter-badges-container');
+        if (badgesContainer) {
+            badgesContainer.remove();
+        }
+
+        // Check if any filters are active
+        const hasFilters = activeFilters.search || activeFilters.level || 
+                          activeFilters.id || activeFilters.source;
+        
+        if (!hasFilters) return;
+
+        // Create badges container
+        badgesContainer = document.createElement('div');
+        badgesContainer.id = 'filter-badges-container';
+        badgesContainer.className = 'filter-badges';
+        
+        if (activeFilters.search) {
+            const badge = createFilterBadge('Search', activeFilters.search, 'search');
+            badgesContainer.appendChild(badge);
+        }
+        if (activeFilters.level) {
+            const badge = createFilterBadge('Level', activeFilters.level, 'level');
+            badgesContainer.appendChild(badge);
+        }
+        if (activeFilters.id) {
+            const badge = createFilterBadge('ID', activeFilters.id, 'id');
+            badgesContainer.appendChild(badge);
+        }
+        if (activeFilters.source) {
+            const badge = createFilterBadge('Source', activeFilters.source, 'source');
+            badgesContainer.appendChild(badge);
+        }
+
+        // Insert after app-header (before file-path or table-header)
+        const appHeader = document.querySelector('.app-header');
+        const filePath = document.getElementById('file-path');
+        if (filePath && filePath.classList.contains('active')) {
+            appHeader.parentNode.insertBefore(badgesContainer, filePath.nextSibling);
+        } else {
+            const tableHeader = document.querySelector('.table-header');
+            if (tableHeader) {
+                appHeader.parentNode.insertBefore(badgesContainer, tableHeader);
+            } else {
+                appHeader.parentNode.insertBefore(badgesContainer, appHeader.nextSibling);
+            }
+        }
+    }
+
+    /**
+     * Create a filter badge
+     */
+    function createFilterBadge(label, value, filterType) {
+        const badge = document.createElement('span');
+        badge.className = 'filter-badge';
+        badge.innerHTML = `${label}: ${value} <span class="remove" onclick="removeFilter('${filterType}')">×</span>`;
+        return badge;
+    }
+
+    /**
+     * Remove a specific filter
+     */
+    function removeFilter(filterType) {
+        if (filterType === 'search') {
+            activeFilters.search = '';
+            searchInput.value = '';
+        } else if (filterType === 'level') {
+            activeFilters.level = '';
+            filterLevel.value = '';
+        } else if (filterType === 'id') {
+            activeFilters.id = '';
+            filterId.value = '';
+        } else if (filterType === 'source') {
+            activeFilters.source = '';
+            filterSource.value = '';
+        }
+        applyFilters();
+        updateURLFilters();
+    }
+
+    /**
+     * Update URL with current filters
+     */
+    function updateURLFilters() {
+        const params = new URLSearchParams();
+        if (activeFilters.search) params.set('search', activeFilters.search);
+        if (activeFilters.level) params.set('level', activeFilters.level);
+        if (activeFilters.id) params.set('id', activeFilters.id);
+        if (activeFilters.source) params.set('source', activeFilters.source);
+        
+        const newURL = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+        window.history.replaceState({}, '', newURL);
+    }
+
+    /**
+     * Load filters from URL
+     */
+    function loadFiltersFromURL() {
+        const params = new URLSearchParams(window.location.search);
+        if (params.has('search')) {
+            activeFilters.search = params.get('search');
+            searchInput.value = activeFilters.search;
+        }
+        if (params.has('level')) {
+            activeFilters.level = params.get('level');
+            filterLevel.value = activeFilters.level;
+        }
+        if (params.has('id')) {
+            activeFilters.id = params.get('id');
+            filterId.value = activeFilters.id;
+        }
+        if (params.has('source')) {
+            activeFilters.source = params.get('source');
+            filterSource.value = activeFilters.source;
+        }
+        
+        // Show filter inputs if filters are loaded
+        if (Object.values(activeFilters).some(v => v)) {
+            searchInput.hidden = false;
+            filterId.hidden = false;
+            filterSource.hidden = false;
+            filterLevel.hidden = false;
+        }
+    }
+
+    /**
+     * Virtual Scrolling Logic
+     */
+    function render() {
+        const scrollTop = viewport.scrollTop;
+        spacer.style.height = (filteredLogs.length * ROW_HEIGHT) + "px";
+        const start = Math.floor(scrollTop / ROW_HEIGHT);
+        const end = Math.min(start + VISIBLE_COUNT, filteredLogs.length);
+        content.style.transform = `translateY(${start * ROW_HEIGHT}px)`;
+        
+        // Use DocumentFragment for better performance
+        const fragment = document.createDocumentFragment();
+        
+        // Get all active search terms for highlighting
+        const searchTerms = [];
+        if (activeFilters.search) searchTerms.push(activeFilters.search);
+        if (activeFilters.id) searchTerms.push(activeFilters.id);
+        if (activeFilters.source) searchTerms.push(activeFilters.source);
+
+        filteredLogs.slice(start, end).forEach((log, index) => {
+            const realIndex = start + index;
+            const statusClass = getStatusClass(log);
+            const isSelected = realIndex === selectedIndex ? 'selected' : '';
+            const isBookmarked = log.id && bookmarkedLogs.has(log.id);
+            
+            const row = document.createElement('div');
+            row.className = `row ${isSelected} ${isBookmarked ? 'bookmarked' : ''}`;
+            row.setAttribute('role', 'row');
+            row.setAttribute('data-index', realIndex);
+            row.setAttribute('data-log-id', log.id || '');
+            row.onclick = () => onRowClick(realIndex);
+            
+            // Bookmark button
+            const bookmarkBtn = document.createElement('button');
+            bookmarkBtn.className = 'bookmark-btn';
+            bookmarkBtn.textContent = isBookmarked ? '⭐' : '☆';
+            bookmarkBtn.onclick = (e) => {
+                e.stopPropagation();
+                toggleBookmark(log.id);
+            };
+            bookmarkBtn.title = isBookmarked ? 'Remove bookmark' : 'Add bookmark';
+            
+            const cells = [
+                { text: log.date, title: log.date, highlight: false },
+                { text: log.method, title: log.method, style: 'font-weight:bold', class: statusClass, highlight: false },
+                { text: log.userId || '-', title: log.userId || '-', highlight: activeFilters.id },
+                { text: log.source || '-', title: log.source || '-', highlight: activeFilters.source },
+                { text: log.path, title: log.path, highlight: activeFilters.search },
+                { text: log.ip, title: log.ip, highlight: false }
+            ];
+            
+            // Add bookmark button as first element
+            const bookmarkCell = document.createElement('div');
+            bookmarkCell.style.width = '30px';
+            bookmarkCell.style.padding = '0';
+            bookmarkCell.appendChild(bookmarkBtn);
+            row.appendChild(bookmarkCell);
+            
+            // Add line number cell
+            const lineNumberCell = document.createElement('div');
+            lineNumberCell.textContent = log.lineNumber || (realIndex + 1);
+            lineNumberCell.style.textAlign = 'right';
+            lineNumberCell.style.paddingRight = '10px';
+            lineNumberCell.style.color = 'var(--text-main)';
+            lineNumberCell.style.opacity = '0.6';
+            lineNumberCell.title = `Line ${log.lineNumber || (realIndex + 1)}`;
+            row.appendChild(lineNumberCell);
+            
+            cells.forEach(cell => {
+                const div = document.createElement('div');
+                // Always apply custom highlights, and search highlights if there's a search term
+                if (customHighlights.size > 0 || (cell.highlight && searchTerms.length > 0)) {
+                    div.innerHTML = highlightText(cell.text, cell.highlight && searchTerms.length > 0 ? searchTerms : []);
+                } else {
+                    div.textContent = cell.text;
+                }
+                div.title = cell.title;
+                if (cell.class) div.className = cell.class;
+                if (cell.style) div.style.cssText = cell.style;
+                row.appendChild(div);
+            });
+            
+            fragment.appendChild(row);
+        });
+        
+        content.innerHTML = '';
+        content.appendChild(fragment);
+        
+        // Apply column widths to newly rendered rows
+        applyColumnWidths();
+    }
+
+    function onRowClick(index) {
+        selectedIndex = index;
+        render();
+        showDetails(index);
+    }
+
+    /**
+     * JSON Tree Renderer
+     */
+    function createJsonNode(key, value, forceCollapse = false) {
+        const li = document.createElement('li');
+        li.className = 'json-node';
+        const container = document.createElement('div');
+        
+        let isNestedJson = false;
+        let parsedNested = null;
+        if (typeof value === 'string') {
+            const t = value.trim();
+            if ((t.startsWith('{') && t.endsWith('}')) || (t.startsWith('[') && t.endsWith(']'))) {
+                try {
+                    parsedNested = JSON.parse(value);
+                    isNestedJson = true;
+                } catch (e) {
+                    // Not nested JSON
+                }
+            }
+        }
+
+        const actualValue = isNestedJson ? parsedNested : value;
+        const isObject = actualValue !== null && typeof actualValue === 'object';
+
+        if (isObject) {
+            const toggle = document.createElement('span');
+            toggle.className = forceCollapse ? 'json-toggle collapsed' : 'json-toggle';
+            toggle.textContent = '▼';
+            const keySpan = document.createElement('span');
+            keySpan.className = 'json-key';
+            keySpan.textContent = key ? `${key}: ` : '';
+            const typeLabel = Array.isArray(actualValue) ? `Array(${actualValue.length})` : 'Object';
+            const infoSpan = document.createElement('span');
+            infoSpan.style.color = '#888';
+            infoSpan.textContent = `{ ${typeLabel} }`;
+            if (isNestedJson) {
+                const badge = document.createElement('span');
+                badge.className = 'nested-label';
+                badge.textContent = 'Nested JSON';
+                infoSpan.appendChild(badge);
+            }
+            container.appendChild(toggle);
+            container.appendChild(keySpan);
+            container.appendChild(infoSpan);
+            const ul = document.createElement('ul');
+            ul.className = forceCollapse ? 'json-tree collapsed-content' : 'json-tree';
+            
+            for (const k in actualValue) {
+                ul.appendChild(createJsonNode(k, actualValue[k], false));
+            }
+            
+            toggle.onclick = (e) => {
+                e.stopPropagation();
+                const isCollapsed = ul.classList.toggle('collapsed-content');
+                toggle.classList.toggle('collapsed', isCollapsed);
+            };
+            li.appendChild(container);
+            li.appendChild(ul);
+        } else {
+            const keySpan = document.createElement('span');
+            keySpan.className = 'json-key';
+            keySpan.textContent = key ? `${key}: ` : '';
+            const valSpan = document.createElement('span');
+            if (typeof value === 'string') {
+                valSpan.className = 'json-string';
+                valSpan.textContent = `"${value}"`;
+            } else if (typeof value === 'number') {
+                valSpan.className = 'json-number';
+                valSpan.textContent = value;
+            } else if (typeof value === 'boolean') {
+                valSpan.className = 'json-bool';
+                valSpan.textContent = value;
+            } else if (value === null) {
+                valSpan.className = 'json-null';
+                valSpan.textContent = 'null';
+            }
+            container.style.paddingLeft = '17px';
+            container.appendChild(keySpan);
+            container.appendChild(valSpan);
+            li.appendChild(container);
+        }
+        return li;
+    }
+
+    /**
+     * Extract all JSON from a string - Enhanced version that handles nested JSON in strings
+     * Returns an array of all found JSON objects
+     */
+    function extractAllJsonFromString(str) {
+        const results = [];
+        const seen = new Set(); // To avoid duplicates
+
+        // First, try to parse the entire string as JSON
+        try {
+            const parsed = JSON.parse(str);
+            const jsonStr = JSON.stringify(parsed);
+            if (!seen.has(jsonStr)) {
+                seen.add(jsonStr);
+                results.push({ parsed: parsed, raw: str, source: 'direct' });
+            }
+        } catch (e) {
+            // Not a direct JSON string, continue with extraction
+        }
+
+        // Try to find and extract JSON from markdown code blocks (```json ... ```)
+        const markdownJsonRegex = /```json\s*([\s\S]*?)```/gi;
+        let match;
+        while ((match = markdownJsonRegex.exec(str)) !== null) {
+            try {
+                const jsonContent = match[1].trim();
+                const parsed = JSON.parse(jsonContent);
+                const jsonStr = JSON.stringify(parsed);
+                if (!seen.has(jsonStr)) {
+                    seen.add(jsonStr);
+                    results.push({ parsed: parsed, raw: jsonContent, source: 'markdown-json' });
+                }
+            } catch (e) {
+                // Invalid JSON in markdown block
+            }
+        }
+
+        // Try to find JSON in code blocks without language tag (``` ... ```)
+        const codeBlockRegex = /```\s*([\s\S]*?)```/g;
+        while ((match = codeBlockRegex.exec(str)) !== null) {
+            try {
+                const jsonContent = match[1].trim();
+                // Check if it looks like JSON
+                if ((jsonContent.startsWith('{') && jsonContent.endsWith('}')) ||
+                    (jsonContent.startsWith('[') && jsonContent.endsWith(']'))) {
+                    const parsed = JSON.parse(jsonContent);
+                    const jsonStr = JSON.stringify(parsed);
+                    if (!seen.has(jsonStr)) {
+                        seen.add(jsonStr);
+                        results.push({ parsed: parsed, raw: jsonContent, source: 'code-block' });
+                    }
+                }
+            } catch (e) {
+                // Not valid JSON
+            }
+        }
+
+        // Try to extract JSON from string values in a larger JSON object
+        // This handles cases where JSON is escaped in a string property
+        try {
+            const parsed = JSON.parse(str);
+            // Recursively search for JSON strings in the parsed object
+            const foundJsons = findAllJsonInObject(parsed);
+            foundJsons.forEach(found => {
+                const jsonStr = JSON.stringify(found.parsed);
+                if (!seen.has(jsonStr)) {
+                    seen.add(jsonStr);
+                    results.push({ ...found, source: 'nested-string' });
+                }
+            });
+        } catch (e) {
+            // Not a valid JSON object, continue
+        }
+
+        // Fallback: Try to find balanced braces/brackets
+        let searchPos = 0;
+        while (searchPos < str.length) {
+            const startBrace = str.indexOf('{', searchPos);
+            const startBracket = str.indexOf('[', searchPos);
+            
+            let start = -1, end = -1;
+            if (startBrace !== -1 && (startBracket === -1 || startBrace < startBracket)) {
+                const balanced = findBalancedBraces(str, startBrace);
+                if (balanced) {
+                    start = balanced.start;
+                    end = balanced.end;
+                    searchPos = end + 1;
+                } else {
+                    searchPos = startBrace + 1;
+                    continue;
+                }
+            } else if (startBracket !== -1) {
+                const balanced = findBalancedBrackets(str, startBracket);
+                if (balanced) {
+                    start = balanced.start;
+                    end = balanced.end;
+                    searchPos = end + 1;
+                } else {
+                    searchPos = startBracket + 1;
+                    continue;
+                }
+            } else {
+                break; // No more JSON found
+            }
+
+            if (start !== -1 && end !== -1 && end >= start) {
+                let potential = str.substring(start, end + 1);
+                try {
+                    const parsed = JSON.parse(potential);
+                    const jsonStr = JSON.stringify(parsed);
+                    if (!seen.has(jsonStr)) {
+                        seen.add(jsonStr);
+                        results.push({ parsed: parsed, raw: potential, source: 'balanced-extraction' });
+                    }
+                } catch (e) {
+                    try {
+                        let cleaned = potential.trim();
+                        const parsed = JSON.parse(cleaned);
+                        const jsonStr = JSON.stringify(parsed);
+                        if (!seen.has(jsonStr)) {
+                            seen.add(jsonStr);
+                            results.push({ parsed: parsed, raw: cleaned, source: 'balanced-extraction-cleaned' });
+                        }
+                    } catch (e2) {
+                        // Invalid JSON
+                    }
+                }
+            }
+        }
+
+        return results.length > 0 ? results : null;
+    }
+
+    /**
+     * Extract JSON from a string (backward compatibility - returns first found)
+     */
+    function extractJsonFromString(str) {
+        const results = extractAllJsonFromString(str);
+        return results && results.length > 0 ? results[0] : null;
+    }
+
+    /**
+     * Recursively search for all JSON strings in an object
+     */
+    function findAllJsonInObject(obj, depth = 0) {
+        const results = [];
+        if (depth > 5) return results; // Prevent infinite recursion
+        
+        if (typeof obj === 'string') {
+            const trimmed = obj.trim();
+            // Check if string contains JSON
+            if ((trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+                (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+                try {
+                    const parsed = JSON.parse(trimmed);
+                    results.push({ parsed: parsed, raw: trimmed });
+                } catch (e) {
+                    // Check for markdown code blocks in the string
+                    const markdownMatch = trimmed.match(/```json\s*([\s\S]*?)```/gi);
+                    if (markdownMatch) {
+                        markdownMatch.forEach(m => {
+                            const innerMatch = m.match(/```json\s*([\s\S]*?)```/i);
+                            if (innerMatch) {
+                                try {
+                                    const jsonContent = innerMatch[1].trim();
+                                    const parsed = JSON.parse(jsonContent);
+                                    results.push({ parsed: parsed, raw: jsonContent });
+                                } catch (e2) {
+                                    // Invalid JSON in markdown
+                                }
+                            }
+                        });
+                    }
+                    // Try to find balanced JSON in the string (without recursive call to avoid infinite loop)
+                    try {
+                        const startBrace = trimmed.indexOf('{');
+                        const startBracket = trimmed.indexOf('[');
+                        if (startBrace !== -1 || startBracket !== -1) {
+                            const start = startBrace !== -1 && (startBracket === -1 || startBrace < startBracket) 
+                                ? startBrace : startBracket;
+                            const balanced = startBrace !== -1 && (startBracket === -1 || startBrace < startBracket)
+                                ? findBalancedBraces(trimmed, start)
+                                : findBalancedBrackets(trimmed, start);
+                            if (balanced) {
+                                const jsonContent = trimmed.substring(balanced.start, balanced.end + 1);
+                                try {
+                                    const parsed = JSON.parse(jsonContent);
+                                    results.push({ parsed: parsed, raw: jsonContent });
+                                } catch (e3) {
+                                    // Invalid JSON
+                                }
+                            }
+                        }
+                    } catch (e4) {
+                        // Error finding balanced JSON
+                    }
+                }
+            }
+        } else if (Array.isArray(obj)) {
+            for (const item of obj) {
+                const found = findAllJsonInObject(item, depth + 1);
+                results.push(...found);
+            }
+        } else if (obj !== null && typeof obj === 'object') {
+            for (const key in obj) {
+                const found = findAllJsonInObject(obj[key], depth + 1);
+                results.push(...found);
+            }
+        }
+        
+        return results;
+    }
+
+    /**
+     * Find balanced braces starting from a position
+     */
+    function findBalancedBraces(str, startPos) {
+        let depth = 0;
+        let start = startPos;
+        let inString = false;
+        let escapeNext = false;
+        
+        for (let i = startPos; i < str.length; i++) {
+            const char = str[i];
+            
+            if (escapeNext) {
+                escapeNext = false;
+                continue;
+            }
+            
+            if (char === '\\') {
+                escapeNext = true;
+                continue;
+            }
+            
+            if (char === '"' && !escapeNext) {
+                inString = !inString;
+                continue;
+            }
+            
+            if (inString) continue;
+            
+            if (char === '{') {
+                depth++;
+            } else if (char === '}') {
+                depth--;
+                if (depth === 0) {
+                    return { start: start, end: i };
+                }
+            }
+        }
+        
+        return null;
+    }
+
+    /**
+     * Find balanced brackets starting from a position
+     */
+    function findBalancedBrackets(str, startPos) {
+        let depth = 0;
+        let start = startPos;
+        let inString = false;
+        let escapeNext = false;
+        
+        for (let i = startPos; i < str.length; i++) {
+            const char = str[i];
+            
+            if (escapeNext) {
+                escapeNext = false;
+                continue;
+            }
+            
+            if (char === '\\') {
+                escapeNext = true;
+                continue;
+            }
+            
+            if (char === '"' && !escapeNext) {
+                inString = !inString;
+                continue;
+            }
+            
+            if (inString) continue;
+            
+            if (char === '[') {
+                depth++;
+            } else if (char === ']') {
+                depth--;
+                if (depth === 0) {
+                    return { start: start, end: i };
+                }
+            }
+        }
+        
+        return null;
+    }
+
+    /**
+     * Show detailed view with tabs
+     */
+    function showDetails(index) {
+        const log = filteredLogs[index];
+        if (!log) return;
+        const rawText = log.raw;
+        
+        // Clear all tab contents
+        document.getElementById('tab-raw').innerHTML = '';
+        document.getElementById('tab-json').innerHTML = '';
+        document.getElementById('tab-metadata').innerHTML = '';
+        
+        detailsOverlay.setAttribute('aria-hidden', 'false');
+        
+        // Show search bar and reset search state
+        document.getElementById('details-search').style.display = 'block';
+        const detailsSearchInput = document.getElementById('details-search-input');
+        if (detailsSearchInput) detailsSearchInput.value = '';
+        if (detailsSearchResults) detailsSearchResults.textContent = '';
+        if (btnSearchPrev) {
+            btnSearchPrev.disabled = true;
+            btnSearchPrev.style.display = 'none';
+        }
+        if (btnSearchNext) {
+            btnSearchNext.disabled = true;
+            btnSearchNext.style.display = 'none';
+        }
+        detailsSearchMatches = [];
+        currentSearchMatchIndex = -1;
+        
+        // RAW TAB
+        const rawTab = document.getElementById('tab-raw');
+        const rawHeader = document.createElement('div');
+        rawHeader.className = 'section-header';
+        
+        const rawTitle = document.createElement('div');
+        rawTitle.className = 'section-title';
+        rawTitle.textContent = 'RAW MESSAGE:';
+        
+        const rawToggle = document.createElement('button');
+        rawToggle.className = 'btn btn-small';
+        rawToggle.style.marginLeft = '10px';
+        rawToggle.textContent = 'Collapse';
+        
+        rawHeader.appendChild(rawTitle);
+        rawHeader.appendChild(rawToggle);
+        
+        const rawContent = document.createElement('div');
+        rawContent.className = 'raw-content'; // Expanded by default
+        rawContent.id = 'raw-content-text';
+        rawContent.textContent = rawText;
+        
+        rawToggle.onclick = () => {
+            const isCollapsed = rawContent.classList.toggle('collapsed');
+            rawToggle.textContent = isCollapsed ? 'Expand' : 'Collapse';
+        };
+
+        rawTab.appendChild(rawHeader);
+        rawTab.appendChild(rawContent);
+
+        // JSON TAB
+        const jsonTab = document.getElementById('tab-json');
+        const allExtracted = extractAllJsonFromString(rawText);
+        
+        if (allExtracted && allExtracted.length > 0) {
+            allExtracted.forEach((extracted, idx) => {
+                const { parsed, raw: jsonRaw, source } = extracted;
+                
+                if (idx > 0) {
+                    const separator = document.createElement('div');
+                    separator.style.margin = '25px 0 15px 0';
+                    separator.style.borderBottom = '2px dashed var(--border-color)';
+                    jsonTab.appendChild(separator);
+                }
+
+                const jsonHeader = document.createElement('div');
+                jsonHeader.className = 'section-header';
+                
+                const jsonTitle = document.createElement('div');
+                jsonTitle.className = 'section-title';
+                jsonTitle.style.color = '#3498db';
+                const sourceLabel = allExtracted.length > 1 
+                    ? `STRUCTURED DATA #${idx + 1} (${source})` 
+                    : 'STRUCTURED DATA (Interactively Explorable)';
+                jsonTitle.textContent = sourceLabel;
+                
+                const jsonCopy = document.createElement('button');
+                jsonCopy.className = 'btn btn-small';
+                jsonCopy.textContent = 'Copy JSON';
+                jsonCopy.onclick = () => copyText(jsonRaw, jsonCopy);
+
+                jsonHeader.appendChild(jsonTitle);
+                jsonHeader.appendChild(jsonCopy);
+                jsonTab.appendChild(jsonHeader);
+
+                const treeRoot = document.createElement('ul');
+                treeRoot.className = 'json-tree';
+                treeRoot.style.paddingLeft = '0';
+                treeRoot.id = `json-tree-${idx}`;
+                treeRoot.appendChild(createJsonNode(null, parsed, false)); // Expanded by default
+                jsonTab.appendChild(treeRoot);
+            });
+        } else {
+            jsonTab.innerHTML = '<div style="padding: 20px; color: var(--text-main);">No JSON data found in this log entry.</div>';
+        }
+
+        // METADATA TAB
+        const metadataTab = document.getElementById('tab-metadata');
+        const metadataContent = document.createElement('div');
+        metadataContent.style.padding = '20px';
+        metadataContent.innerHTML = `
+            <div class="section-header">
+                <div class="section-title">Log Metadata</div>
+            </div>
+            <div style="margin-top: 15px;">
+                <div style="margin: 10px 0;"><strong>Date:</strong> ${escapeHtml(log.date)}</div>
+                <div style="margin: 10px 0;"><strong>Level:</strong> <span class="${getStatusClass(log)}">${escapeHtml(log.method)}</span></div>
+                <div style="margin: 10px 0;"><strong>ID:</strong> ${escapeHtml(log.userId || '-')}</div>
+                <div style="margin: 10px 0;"><strong>Source:</strong> ${escapeHtml(log.source || '-')}</div>
+                <div style="margin: 10px 0;"><strong>IP:</strong> ${escapeHtml(log.ip)}</div>
+                <div style="margin: 10px 0;"><strong>Message Length:</strong> ${rawText.length} characters</div>
+                <div style="margin: 10px 0;"><strong>Line Index:</strong> ${index + 1} of ${filteredLogs.length}</div>
+            </div>
+        `;
+        metadataTab.appendChild(metadataContent);
+        
+        // Switch to current tab (without restoring content)
+        currentDetailsTab = currentDetailsTab || 'raw';
+        
+        // Update tab buttons
+        document.querySelectorAll('.details-tab').forEach(tab => {
+            tab.classList.remove('active');
+            if (tab.getAttribute('data-tab') === currentDetailsTab) {
+                tab.classList.add('active');
+            }
+        });
+        
+        // Update tab contents visibility
+        document.querySelectorAll('.details-tab-content').forEach(content => {
+            content.classList.remove('active');
+        });
+        document.getElementById(`tab-${currentDetailsTab}`).classList.add('active');
+        
+        // Setup search in details
+        if (detailsSearchInput) {
+            detailsSearchInput.oninput = debounce(() => {
+                const searchTerm = detailsSearchInput.value;
+                searchInDetails(searchTerm);
+            }, 300);
+        }
+        
+        // Store original content for each tab (for search restoration)
+        document.getElementById('tab-raw').dataset.originalContent = document.getElementById('tab-raw').innerHTML;
+        document.getElementById('tab-json').dataset.originalContent = document.getElementById('tab-json').innerHTML;
+        document.getElementById('tab-metadata').dataset.originalContent = document.getElementById('tab-metadata').innerHTML;
+        
+        detailsOverlay.classList.add('open');
+    }
+
+    /**
+     * Switch between detail tabs
+     */
+    function switchDetailsTab(tabName) {
+        currentDetailsTab = tabName;
+        
+        // Update tab buttons
+        document.querySelectorAll('.details-tab').forEach(tab => {
+            tab.classList.remove('active');
+            if (tab.getAttribute('data-tab') === tabName) {
+                tab.classList.add('active');
+            }
+        });
+        
+        // Update tab contents visibility
+        document.querySelectorAll('.details-tab-content').forEach(content => {
+            content.classList.remove('active');
+        });
+        const activeTabContent = document.getElementById(`tab-${tabName}`);
+        activeTabContent.classList.add('active');
+        
+        // Reset search state when switching tabs
+        if (detailsSearchInput) detailsSearchInput.value = '';
+        if (detailsSearchResults) detailsSearchResults.textContent = '';
+        if (btnSearchPrev) {
+            btnSearchPrev.disabled = true;
+            btnSearchPrev.style.display = 'none';
+        }
+        if (btnSearchNext) {
+            btnSearchNext.disabled = true;
+            btnSearchNext.style.display = 'none';
+        }
+        detailsSearchMatches = [];
+        currentSearchMatchIndex = -1;
+        
+        // Restore original content for the active tab (remove any search highlights)
+        if (activeTabContent && activeTabContent.dataset.originalContent) {
+            activeTabContent.innerHTML = activeTabContent.dataset.originalContent;
+            // Re-attach event listeners if needed
+            reattachDetailsEventListeners(activeTabContent);
+        }
+    }
+
+    /**
+     * Save expand/collapse state of elements in a tab
+     */
+    function saveExpandState(tabElement) {
+        const state = {
+            rawExpanded: false,
+            jsonNodes: {}
+        };
+        
+        // Save RAW state
+        const rawContent = tabElement.querySelector('#raw-content-text');
+        if (rawContent) {
+            state.rawExpanded = !rawContent.classList.contains('collapsed');
+        }
+        
+        // Save JSON nodes state
+        tabElement.querySelectorAll('.json-tree').forEach((ul, idx) => {
+            state.jsonNodes[idx] = !ul.classList.contains('collapsed-content');
+        });
+        
+        return state;
+    }
+
+    /**
+     * Restore expand/collapse state of elements in a tab
+     */
+    function restoreExpandState(tabElement, state) {
+        if (!state) return;
+        
+        // Restore RAW state
+        const rawContent = tabElement.querySelector('#raw-content-text');
+        const rawToggle = tabElement.querySelector('.btn.btn-small');
+        if (rawContent && rawToggle) {
+            if (state.rawExpanded) {
+                rawContent.classList.remove('collapsed');
+                rawToggle.textContent = 'Collapse';
+            } else {
+                rawContent.classList.add('collapsed');
+                rawToggle.textContent = 'Expand';
+            }
+        }
+        
+        // Restore JSON nodes state
+        tabElement.querySelectorAll('.json-tree').forEach((ul, idx) => {
+            const toggle = ul.previousElementSibling?.querySelector('.json-toggle');
+            if (toggle && state.jsonNodes[idx] !== undefined) {
+                if (state.jsonNodes[idx]) {
+                    ul.classList.remove('collapsed-content');
+                    toggle.classList.remove('collapsed');
+                } else {
+                    ul.classList.add('collapsed-content');
+                    toggle.classList.add('collapsed');
+                }
+            }
+        });
+    }
+
+    /**
+     * Re-attach event listeners after content restoration
+     */
+    function reattachDetailsEventListeners(tabElement) {
+        if (!tabElement) return;
+        
+        // Re-attach RAW expand button
+        const rawToggle = tabElement.querySelector('.btn.btn-small');
+        if (rawToggle && rawToggle.textContent.includes('Expand')) {
+            const rawContent = tabElement.querySelector('#raw-content-text');
+            if (rawContent) {
+                rawToggle.onclick = () => {
+                    const isCollapsed = rawContent.classList.toggle('collapsed');
+                    rawToggle.textContent = isCollapsed ? 'Expand' : 'Collapse';
+                };
+            }
+        }
+        
+        // Re-attach JSON toggle buttons
+        tabElement.querySelectorAll('.json-toggle').forEach(toggle => {
+            toggle.onclick = (e) => {
+                e.stopPropagation();
+                const ul = toggle.parentElement.nextElementSibling;
+                if (ul && ul.classList.contains('json-tree')) {
+                    const isCollapsed = ul.classList.toggle('collapsed-content');
+                    toggle.classList.toggle('collapsed', isCollapsed);
+                }
+            };
+        });
+    }
+
+    /**
+     * Search in details panel with result count and navigation
+     */
+    function searchInDetails(searchTerm) {
+        detailsSearchMatches = [];
+        currentSearchMatchIndex = -1;
+        
+        if (!searchTerm || !searchTerm.trim()) {
+            // Re-render the active tab to remove highlights
+            const activeTab = document.querySelector('.details-tab-content.active');
+            if (activeTab && activeTab.dataset.originalContent) {
+                // Save state before restoring
+                const savedState = saveExpandState(activeTab);
+                activeTab.innerHTML = activeTab.dataset.originalContent;
+                // Re-attach event listeners and restore state
+                reattachDetailsEventListeners(activeTab);
+                restoreExpandState(activeTab, savedState);
+            }
+            if (detailsSearchResults) detailsSearchResults.textContent = '';
+            if (btnSearchPrev) btnSearchPrev.disabled = true;
+            if (btnSearchNext) btnSearchNext.disabled = true;
+            return;
+        }
+        
+        const activeTab = document.querySelector('.details-tab-content.active');
+        if (!activeTab) return;
+        
+        // Save state before restoring
+        const savedState = saveExpandState(activeTab);
+        
+        // Restore original content first
+        if (activeTab.dataset.originalContent) {
+            activeTab.innerHTML = activeTab.dataset.originalContent;
+            // Re-attach event listeners and restore state
+            reattachDetailsEventListeners(activeTab);
+            restoreExpandState(activeTab, savedState);
+        }
+        
+        // Get all text nodes and highlight matches
+        const walker = document.createTreeWalker(
+            activeTab,
+            NodeFilter.SHOW_TEXT,
+            {
+                acceptNode: function(node) {
+                    // Skip script, style, and mark nodes
+                    const parent = node.parentNode;
+                    if (!parent || parent.tagName === 'SCRIPT' || parent.tagName === 'STYLE' || parent.tagName === 'MARK') {
+                        return NodeFilter.FILTER_REJECT;
+                    }
+                    return NodeFilter.FILTER_ACCEPT;
+                }
+            },
+            false
+        );
+        
+        const textNodes = [];
+        let node;
+        while (node = walker.nextNode()) {
+            if (node.textContent.trim() && node.parentNode.tagName !== 'MARK') {
+                textNodes.push(node);
+            }
+        }
+        
+        const regex = new RegExp(`(${escapeRegex(searchTerm)})`, 'gi');
+        let matchCount = 0;
+        
+        textNodes.forEach(textNode => {
+            const text = textNode.textContent;
+            if (regex.test(text)) {
+                // Reset regex for next iteration
+                regex.lastIndex = 0;
+                const matches = [...text.matchAll(new RegExp(`(${escapeRegex(searchTerm)})`, 'gi'))];
+                matches.forEach(() => {
+                    detailsSearchMatches.push({
+                        element: textNode.parentNode,
+                        textNode: textNode
+                    });
+                    matchCount++;
+                });
+                
+                const highlighted = text.replace(new RegExp(`(${escapeRegex(searchTerm)})`, 'gi'), '<mark>$1</mark>');
+                const wrapper = document.createElement('span');
+                wrapper.innerHTML = highlighted;
+                textNode.parentNode.replaceChild(wrapper, textNode);
+            }
+        });
+        
+        // Update result count and navigation buttons
+        if (matchCount > 0) {
+            if (detailsSearchResults) detailsSearchResults.textContent = `${matchCount} result${matchCount !== 1 ? 's' : ''}`;
+            if (btnSearchPrev) {
+                btnSearchPrev.disabled = false;
+                btnSearchPrev.style.display = 'inline-block';
+            }
+            if (btnSearchNext) {
+                btnSearchNext.disabled = false;
+                btnSearchNext.style.display = 'inline-block';
+            }
+            currentSearchMatchIndex = 0;
+            scrollToSearchMatch(0);
+        } else {
+            if (detailsSearchResults) detailsSearchResults.textContent = 'No results';
+            if (btnSearchPrev) {
+                btnSearchPrev.disabled = true;
+                btnSearchPrev.style.display = 'none';
+            }
+            if (btnSearchNext) {
+                btnSearchNext.disabled = true;
+                btnSearchNext.style.display = 'none';
+            }
+        }
+    }
+
+    /**
+     * Navigate between search results
+     */
+    function navigateSearchResults(direction) {
+        if (detailsSearchMatches.length === 0) return;
+        
+        currentSearchMatchIndex += direction;
+        if (currentSearchMatchIndex < 0) {
+            currentSearchMatchIndex = detailsSearchMatches.length - 1;
+        } else if (currentSearchMatchIndex >= detailsSearchMatches.length) {
+            currentSearchMatchIndex = 0;
+        }
+        
+        scrollToSearchMatch(currentSearchMatchIndex);
+        if (detailsSearchResults) detailsSearchResults.textContent = `${currentSearchMatchIndex + 1} / ${detailsSearchMatches.length}`;
+    }
+
+    /**
+     * Scroll to a specific search match
+     */
+    function scrollToSearchMatch(index) {
+        if (index < 0 || index >= detailsSearchMatches.length) return;
+        
+        const match = detailsSearchMatches[index];
+        const activeTab = document.querySelector('.details-tab-content.active');
+        if (!activeTab || !match.element) return;
+        
+        // Find the mark element within the match
+        const marks = activeTab.querySelectorAll('mark');
+        if (marks[index]) {
+            marks[index].scrollIntoView({ behavior: 'smooth', block: 'center' });
+            // Highlight current match
+            marks.forEach((m, i) => {
+                if (i === index) {
+                    m.style.backgroundColor = '#ff9800';
+                    m.style.outline = '2px solid #ff9800';
+                } else {
+                    m.style.backgroundColor = '';
+                    m.style.outline = '';
+                }
+            });
+        }
+    }
+
+    /**
+     * Toggle bookmark for a log entry
+     */
+    function toggleBookmark(logId) {
+        if (!logId) return;
+        
+        if (bookmarkedLogs.has(logId)) {
+            bookmarkedLogs.delete(logId);
+            showToast('Bookmark removed');
+        } else {
+            bookmarkedLogs.add(logId);
+            showToast('Bookmark added');
+        }
+        // No persistence - bookmarks are session-only
+        render();
+    }
+
+    /**
+     * Clear all bookmarks
+     */
+    function clearAllBookmarks() {
+        const count = bookmarkedLogs.size;
+        bookmarkedLogs.clear();
+        showToast(`Cleared ${count} bookmark${count !== 1 ? 's' : ''}`);
+        render();
+    }
+
+    /**
+     * Export logs
+     */
+    function exportLogs() {
+        if (filteredLogs.length === 0) {
+            showToast('No logs to export');
+            return;
+        }
+        
+        const format = prompt('Export format: csv, json, or txt?', 'csv');
+        if (!format) return;
+        
+        let content = '';
+        let filename = 'logs';
+        const mimeType = format === 'json' ? 'application/json' : 'text/plain';
+        
+        if (format === 'csv') {
+            content = 'Date,Level,ID,Source,Message,IP\n';
+            filteredLogs.forEach(log => {
+                content += `"${log.date}","${log.method}","${log.userId || '-'}","${log.source || '-'}","${log.path}","${log.ip}"\n`;
+            });
+            filename += '.csv';
+        } else if (format === 'json') {
+            content = JSON.stringify(filteredLogs, null, 2);
+            filename += '.json';
+        } else {
+            filteredLogs.forEach(log => {
+                content += log.raw + '\n';
+            });
+            filename += '.txt';
+        }
+        
+        const blob = new Blob([content], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+        
+        showToast(`Exported ${filteredLogs.length} entries as ${format.toUpperCase()}`);
+    }
+
+    /**
+     * Export only bookmarked logs
+     */
+    function exportBookmarks() {
+        if (bookmarkedLogs.size === 0) {
+            showToast('No bookmarks to export');
+            return;
+        }
+        
+        const bookmarkedLogsArray = filteredLogs.filter(log => bookmarkedLogs.has(log.id));
+        if (bookmarkedLogsArray.length === 0) {
+            showToast('No bookmarked logs in current filter');
+            return;
+        }
+        
+        const format = prompt('Export format: csv, json, or txt?', 'csv');
+        if (!format) return;
+        
+        let content = '';
+        let filename = 'bookmarks';
+        const mimeType = format === 'json' ? 'application/json' : 'text/plain';
+        
+        if (format === 'csv') {
+            content = 'Date,Level,ID,Source,Message,IP\n';
+            bookmarkedLogsArray.forEach(log => {
+                content += `"${log.date}","${log.method}","${log.userId || '-'}","${log.source || '-'}","${log.path}","${log.ip}"\n`;
+            });
+            filename += '.csv';
+        } else if (format === 'json') {
+            content = JSON.stringify(bookmarkedLogsArray, null, 2);
+            filename += '.json';
+        } else {
+            bookmarkedLogsArray.forEach(log => {
+                content += log.raw + '\n';
+            });
+            filename += '.txt';
+        }
+        
+        const blob = new Blob([content], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+        
+        showToast(`Exported ${bookmarkedLogsArray.length} bookmarked entries as ${format.toUpperCase()}`);
+    }
+
+    /**
+     * Jump to a specific line number
+     */
+    function jumpToLine() {
+        const lineNumber = parseInt(jumpToLineInput.value);
+        if (!lineNumber || lineNumber < 1) {
+            showToast('Please enter a valid line number');
+            return;
+        }
+        
+        // Find the log at the specified index (line number - 1)
+        const targetIndex = lineNumber - 1;
+        if (targetIndex >= filteredLogs.length) {
+            showToast(`Line ${lineNumber} is out of range. Total lines: ${filteredLogs.length}`);
+            return;
+        }
+        
+        // Find the index in filteredLogs
+        selectedIndex = targetIndex;
+        handleSelectionChange();
+        
+        // Scroll to the row
+        const rowHeight = ROW_HEIGHT;
+        const targetScroll = selectedIndex * rowHeight;
+        viewport.scrollTop = Math.max(0, targetScroll - viewport.clientHeight / 2);
+        
+        render();
+        showToast(`Jumped to line ${lineNumber}`);
+    }
+
+    /**
+     * Show highlight picker dialog
+     */
+    function showHighlightPicker() {
+        const picker = document.getElementById('highlight-picker');
+        if (picker) {
+            picker.classList.add('active');
+            const wordInput = document.getElementById('highlight-word');
+            if (wordInput) wordInput.focus();
+        }
+    }
+
+    /**
+     * Apply custom highlight
+     */
+    function applyHighlight() {
+        const wordInput = document.getElementById('highlight-word');
+        const colorInput = document.getElementById('highlight-color');
+        const word = wordInput.value.trim();
+        const color = colorInput.value;
+        
+        if (!word) {
+            showToast('Please enter a word to highlight');
+            return;
+        }
+        
+        customHighlights.set(word.toLowerCase(), color);
+        closeHighlightPicker();
+        render();
+        showToast(`Highlighting "${word}" in ${color}`);
+    }
+
+    /**
+     * Clear all custom highlights
+     */
+    function clearAllHighlights() {
+        customHighlights.clear();
+        closeHighlightPicker();
+        render();
+        showToast('All highlights cleared');
+    }
+
+    /**
+     * Close highlight picker
+     */
+    function closeHighlightPicker() {
+        const picker = document.getElementById('highlight-picker');
+        if (picker) {
+            picker.classList.remove('active');
+        }
+    }
+
+    /**
+     * Calculate and show statistics
+     */
+    function calculateStats() {
+        const stats = {
+            total: allLogs.length,
+            filtered: filteredLogs.length,
+            errors: allLogs.filter(log => getStatusClass(log) === 'st-err').length,
+            warnings: allLogs.filter(log => getStatusClass(log) === 'st-warn').length,
+            success: allLogs.filter(log => getStatusClass(log) === 'st-ok').length,
+            levels: {},
+            topIPs: {},
+            statusCodes: {}
+        };
+        
+        allLogs.forEach(log => {
+            // Count levels
+            const level = log.method.toUpperCase();
+            stats.levels[level] = (stats.levels[level] || 0) + 1;
+            
+            // Count IPs
+            if (log.ip && log.ip !== 'RAW' && log.ip !== 'JSON' && log.ip !== 'ARRAY') {
+                stats.topIPs[log.ip] = (stats.topIPs[log.ip] || 0) + 1;
+            }
+            
+            // Count status codes
+            if (log.status && log.status !== '-') {
+                stats.statusCodes[log.status] = (stats.statusCodes[log.status] || 0) + 1;
+            }
+        });
+        
+        return stats;
+    }
+
+    function toggleStats() {
+        if (statsPanel.classList.contains('active')) {
+            statsPanel.classList.remove('active');
+            return;
+        }
+        
+        const stats = calculateStats();
+        const statsContent = document.getElementById('stats-content');
+        statsContent.innerHTML = '';
+        
+        const items = [
+            { label: 'Total Entries', value: stats.total },
+            { label: 'Filtered', value: stats.filtered },
+            { label: 'Errors', value: stats.errors, class: 'st-err' },
+            { label: 'Warnings', value: stats.warnings, class: 'st-warn' },
+            { label: 'Success', value: stats.success, class: 'st-ok' }
+        ];
+        
+        items.forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'stats-item';
+            const label = document.createElement('span');
+            label.textContent = item.label + ':';
+            const value = document.createElement('span');
+            value.textContent = item.value;
+            if (item.class) value.className = item.class;
+            div.appendChild(label);
+            div.appendChild(value);
+            statsContent.appendChild(div);
+        });
+        
+        // Top IPs
+        const topIPs = Object.entries(stats.topIPs)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5);
+        
+        if (topIPs.length > 0) {
+            const ipHeader = document.createElement('div');
+            ipHeader.style.marginTop = '15px';
+            ipHeader.style.fontWeight = 'bold';
+            ipHeader.textContent = 'Top IPs:';
+            statsContent.appendChild(ipHeader);
+            
+            topIPs.forEach(([ip, count]) => {
+                const div = document.createElement('div');
+                div.className = 'stats-item';
+                div.style.fontSize = '11px';
+                div.innerHTML = `<span>${ip}</span><span>${count}</span>`;
+                statsContent.appendChild(div);
+            });
+        }
+        
+        statsPanel.classList.add('active');
+    }
+
+    /**
+     * Toggle dark theme
+     */
+    function toggleTheme() {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        document.documentElement.setAttribute('data-theme', isDark ? 'light' : 'dark');
+        btnTheme.textContent = isDark ? '🌙' : '☀️';
+        localStorage.setItem('theme', isDark ? 'light' : 'dark');
+    }
+
+    // Load saved theme
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        btnTheme.textContent = '☀️';
+    }
+
+    /**
+     * Utilities
+     */
+    function copyText(text, btn) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(() => {
+                if (btn) {
+                    const original = btn.textContent;
+                    btn.textContent = "Copied!";
+                    setTimeout(() => btn.textContent = original, 2000);
+                }
+                showToast('Copied to clipboard');
+            }).catch(err => {
+                console.error('Failed to copy:', err);
+                showToast('Failed to copy');
+            });
+        } else {
+            // Fallback for older browsers
+            const temp = document.createElement("textarea");
+            temp.value = text;
+            document.body.appendChild(temp);
+            temp.select();
+            document.execCommand("copy");
+            document.body.removeChild(temp);
+            if (btn) {
+                const original = btn.textContent;
+                btn.textContent = "Copied!";
+                setTimeout(() => btn.textContent = original, 2000);
+            }
+            showToast('Copied to clipboard');
+        }
+    }
+
+    function copyAll() {
+        const activeTab = document.querySelector('.details-tab-content.active');
+        if (activeTab) {
+            copyText(activeTab.textContent, document.querySelectorAll('.details-actions .btn')[1]);
+        } else {
+            copyText(detailsBody.textContent, document.querySelectorAll('.details-actions .btn')[1]);
+        }
+    }
+
+    let isResizing = false;
+    resizer.addEventListener('mousedown', (e) => {
+        isResizing = true;
+        document.body.classList.add('resizing');
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', stopResizing);
+    });
+
+    function handleMouseMove(e) {
+        if (!isResizing) return;
+        const newWidth = window.innerWidth - e.clientX;
+        if (newWidth >= 300 && newWidth <= window.innerWidth) {
+            detailsOverlay.style.width = `${newWidth}px`;
+            if (isMaximized) isMaximized = false;
+        }
+    }
+
+    function stopResizing() {
+        isResizing = false;
+        document.body.classList.remove('resizing');
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', stopResizing);
+    }
+
+    function toggleMaximize() {
+        if (!isMaximized) {
+            originalWidth = detailsOverlay.offsetWidth;
+            detailsOverlay.style.width = '100vw';
+            document.querySelectorAll('.details-actions .btn')[0].textContent = 'Minimize';
+        } else {
+            detailsOverlay.style.width = `${originalWidth}px`;
+            document.querySelectorAll('.details-actions .btn')[0].textContent = 'Maximize';
+        }
+        isMaximized = !isMaximized;
+    }
+
+    function closeDetails() {
+        detailsOverlay.classList.remove('open');
+        detailsOverlay.setAttribute('aria-hidden', 'true');
+        // Hide search and reset state
+        document.getElementById('details-search').style.display = 'none';
+        if (detailsSearchInput) detailsSearchInput.value = '';
+        if (detailsSearchResults) detailsSearchResults.textContent = '';
+        if (btnSearchPrev) {
+            btnSearchPrev.disabled = true;
+            btnSearchPrev.style.display = 'none';
+        }
+        if (btnSearchNext) {
+            btnSearchNext.disabled = true;
+            btnSearchNext.style.display = 'none';
+        }
+        detailsSearchMatches = [];
+        currentSearchMatchIndex = -1;
+    }
+
+    // Debounced search
+    searchInput.oninput = debounce(() => {
+        activeFilters.search = searchInput.value;
+        applyFilters();
+        updateURLFilters();
+    }, 300);
+
+    viewport.onscroll = render;
+</script>
+
+</body>
+</html>
+
